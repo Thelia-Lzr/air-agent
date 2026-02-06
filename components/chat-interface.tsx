@@ -46,7 +46,8 @@ export function ChatInterface({ apiKey, baseUrl, model }: ChatInterfaceProps) {
   // MCP state
   const [mcpEnabled, setMcpEnabled] = React.useState(false)
   const [mcpServerId, setMcpServerId] = React.useState<string | undefined>()
-  const [mcpClient, setMcpClient] = React.useState<McpClient | null>(null)
+  const [, setMcpClient] = React.useState<McpClient | null>(null)
+  const mcpClientRef = React.useRef<McpClient | null>(null)
   const [mcpStatus, setMcpStatus] = React.useState<string>("disconnected")
   const [mcpError, setMcpError] = React.useState<string | undefined>()
 
@@ -68,8 +69,9 @@ export function ChatInterface({ apiKey, baseUrl, model }: ChatInterfaceProps) {
   React.useEffect(() => {
     const connectMcp = async () => {
       // Disconnect existing client
-      if (mcpClient) {
-        await mcpClient.disconnect()
+      if (mcpClientRef.current) {
+        await mcpClientRef.current.disconnect()
+        mcpClientRef.current = null
         setMcpClient(null)
       }
 
@@ -105,6 +107,7 @@ export function ChatInterface({ apiKey, baseUrl, model }: ChatInterfaceProps) {
           toolRegistry.registerTool(tool)
         })
 
+        mcpClientRef.current = client
         setMcpClient(client)
         setMcpError(undefined)
       } catch (err) {
@@ -112,6 +115,7 @@ export function ChatInterface({ apiKey, baseUrl, model }: ChatInterfaceProps) {
         setMcpError(err instanceof Error ? err.message : "Connection failed")
         setMcpStatus("error")
         setMcpClient(null)
+        mcpClientRef.current = null
       }
     }
 
@@ -119,13 +123,14 @@ export function ChatInterface({ apiKey, baseUrl, model }: ChatInterfaceProps) {
 
     // Cleanup
     return () => {
-      if (mcpClient) {
-        mcpClient.disconnect().catch((err) => {
+      if (mcpClientRef.current) {
+        mcpClientRef.current.disconnect().catch((err) => {
           console.error("Error during MCP cleanup:", err)
         })
+        mcpClientRef.current = null
       }
     }
-  }, [mcpClient, mcpEnabled, mcpServerId, toolRegistry])
+  }, [mcpEnabled, mcpServerId, toolRegistry])
 
   // Save MCP settings when they change
   const handleMcpToggle = (enabled: boolean, serverId?: string) => {

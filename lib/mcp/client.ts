@@ -44,14 +44,14 @@ export class McpClient {
       }
 
       // Create Streamable HTTP transport
-      this.transport = new StreamableHTTPClientTransport(
-        new URL(this.config.url),
-        {
-          requestInit: {
-            headers,
-          },
-        }
-      )
+      // MCD's MCP doc uses the origin URL directly (e.g. https://mcp.mcd.cn).
+      // Some deployments may respond 405 for GET /; we treat that as ignorable.
+      const effectiveUrl = normalizeMcpEndpointUrl(this.config.url)
+      this.transport = new StreamableHTTPClientTransport(new URL(effectiveUrl), {
+        requestInit: {
+          headers,
+        },
+      })
 
       // Create MCP client
       this.client = new Client(
@@ -67,10 +67,21 @@ export class McpClient {
       )
 
       // Connect to the server
-      await this.client.connect(this.transport)
+      try {
+        await this.client.connect(this.transport)
+      } catch (error) {
+        // Some MCP reverse proxies (and MCD's MCP origin) may return 405 to a GET probe
+        // while still being usable for Streamable HTTP requests. Ignore 405 to prevent
+        // noisy error state + reconnect loops.
+        if (isLikely405(error)) {
+          this.updateStatus("connected")
+          return
+        }
+        throw error
+      }
       this.updateStatus("connected")
     } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : "Connection failed"
+      const errorMsg = formatConnectError(error, this.config.url)
       this.updateStatus("error", errorMsg)
       throw error
     }
@@ -157,6 +168,73 @@ export class McpClient {
       this.statusCallback(status, error)
     }
   }
+}
+
+function safeParseUrl(url: string): URL | null {
+  try {
+    return new URL(url)
+  } catch {
+    return null
+  }
+}
+
+function normalizeMcpEndpointUrl(url: string): string {
+  const parsed = safeParseUrl(url)
+  if (!parsed) return url
+
+  return parsed.toString()
+}
+
+function isLikely405(error: unknown): boolean {
+  if (!error) return false
+
+  const status = getErrorStatus(error)
+  if (typeof status === "number" && status === 405) return true
+
+  const message = getErrorMessage(error)
+
+  return /\b405\b/i.test(message) || /method not allowed/i.test(message)
+}
+
+function formatConnectError(error: unknown, configuredUrl: string): string {
+  const baseMessage = error instanceof Error ? error.message : "Connection failed"
+
+  // Provide a targeted hint for the common case where a server expects /mcp.
+  if (isLikely405(error)) {
+    const parsed = safeParseUrl(configuredUrl)
+    if (parsed && (parsed.pathname === "/" || parsed.pathname === "")) {
+      const suggested = normalizeMcpEndpointUrl(configuredUrl)
+      return `${baseMessage} (try using the MCP endpoint URL, e.g. ${suggested})`
+    }
+  }
+
+  return baseMessage
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null
+}
+
+function getErrorStatus(error: unknown): unknown {
+  if (!isRecord(error)) return undefined
+
+  if ("status" in error) {
+    return (error as Record<string, unknown>).status
+  }
+
+  const response = (error as Record<string, unknown>).response
+  if (isRecord(response) && "status" in response) {
+    return (response as Record<string, unknown>).status
+  }
+
+  return undefined
+}
+
+function getErrorMessage(error: unknown): string {
+  if (typeof error === "string") return error
+  if (error instanceof Error) return error.message
+  if (isRecord(error) && typeof error.message === "string") return error.message
+  return ""
 }
 
 /**
