@@ -125,7 +125,7 @@ export function ChatInterface({ apiKey, baseUrl, model }: ChatInterfaceProps) {
         })
       }
     }
-  }, [mcpEnabled, mcpServerId])
+  }, [mcpClient, mcpEnabled, mcpServerId, toolRegistry])
 
   // Save MCP settings when they change
   const handleMcpToggle = (enabled: boolean, serverId?: string) => {
@@ -306,7 +306,7 @@ export function ChatInterface({ apiKey, baseUrl, model }: ChatInterfaceProps) {
                 <div
                   className={`rounded-lg px-4 py-2 overflow-hidden break-words min-w-0 ${
                   message.role === "user"
-                  ? "bg-primary text-primary-foreground max-w-[90%]"
+                  ? "bg-primary text-primary-foreground  max-w-[90%]"
                   : message.role === "tool"
                   ? "bg-muted/50 border border-muted-foreground/20 max-w-[90%]"
                   : "bg-muted max-w-[90%]"
