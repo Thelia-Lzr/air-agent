@@ -85,41 +85,23 @@ Expected behavior:
 - Tool call to `get_current_time` with timezone parameter
 - AI responds with Tokyo time
 
-### 4. Test Weather Tool
-
-Try these example prompts:
-
-**Get Weather:**
-
-```
-What's the weather like in San Francisco?
-```
-
-Expected behavior:
-
-- Tool call to `get_weather`
-- AI responds with mock weather data
-- Response includes temperature, conditions, humidity, wind speed
-
-**Note:** The weather tool returns mock data for demonstration purposes.
-
-### 5. Test Multi-Step Workflows
+### 4. Test Multi-Step Workflows
 
 Try prompts that require multiple tool calls:
 
 **Complex Query:**
 
 ```
-Calculate 100 divided by 4, and then tell me what the weather is like in Paris.
+Calculate 100 divided by 4, and then tell me what time it is in Tokyo.
 ```
 
 Expected behavior:
 
 - First tool call: calculator
-- Second tool call: get_weather
+- Second tool call: get_current_time
 - AI synthesizes both results in the response
 
-### 6. Test Streaming Behavior
+### 5. Test Streaming Behavior
 
 Pay attention to the UI during tool execution:
 
@@ -235,7 +217,6 @@ Use this checklist to verify all functionality:
 - [ ] Calculator: Division by zero (error handling)
 - [ ] Get Current Time: Default timezone
 - [ ] Get Current Time: Custom timezone
-- [ ] Get Weather: Any location
 - [ ] Multi-step: Multiple tool calls in one message
 - [ ] Streaming: Content appears progressively
 - [ ] UI Indicators: Tool badges display correctly

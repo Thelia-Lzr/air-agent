@@ -34,10 +34,6 @@ This document summarizes the implementation of automatic tool call handling and 
   - Timezone support (defaults to UTC)
   - Formatted and ISO timestamp outputs
   
-- **Get Weather**: Mock weather data for demonstration
-  - Location-based queries
-  - Random but realistic weather data
-  - Clear indication it's mock data
 
 ### 2. AI SDK Service (lib/ai-sdk.ts)
 
@@ -239,10 +235,9 @@ From the original issue requirements:
 ## Known Limitations
 
 1. **Client-side only**: No server-side tool execution
-2. **Mock weather data**: Weather tool returns simulated data
-3. **Sequential tool execution**: Tools execute one at a time
-4. **No persistent history**: Conversation history stored in browser memory only
-5. **Tool iteration limit**: Maximum 5 tool calls per message (configurable)
+2. **Sequential tool execution**: Tools execute one at a time
+3. **No persistent history**: Conversation history stored in browser memory only
+4. **Tool iteration limit**: Maximum 5 tool calls per message (configurable)
 
 ## Future Enhancements
 

@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { Network, Check } from "lucide-react"
+import { Network } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
   Select,
@@ -23,7 +23,6 @@ interface McpToggleProps {
 
 export function McpToggle({ enabled, serverId, onToggle }: McpToggleProps) {
   const [servers, setServers] = React.useState<McpServerConfig[]>([])
-  const [open, setOpen] = React.useState(false)
 
   // Load servers on mount and when dialog is opened
   React.useEffect(() => {

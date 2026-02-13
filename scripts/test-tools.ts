@@ -49,16 +49,7 @@ async function testToolRegistry() {
   console.log("Result:", timeResult)
   console.log()
 
-  // Test 6: Execute get_weather
-  console.log("--- Test: Get Weather ---")
-  const weatherResult = await registry.executeTool("get_weather", {
-    location: "San Francisco",
-  })
-  console.log("Input: San Francisco")
-  console.log("Result:", weatherResult)
-  console.log()
-
-  // Test 7: Execute non-existent tool
+  // Test 6: Execute non-existent tool
   console.log("--- Test: Non-existent tool ---")
   const notFoundResult = await registry.executeTool("non_existent_tool", {})
   console.log("Input: non_existent_tool")

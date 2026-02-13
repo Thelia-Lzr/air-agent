@@ -5,11 +5,14 @@ import { ChatInterface } from "@/components/chat-interface"
 import { SettingsDrawer } from "@/components/settings-drawer"
 import { STORAGE_KEY, DEFAULT_MODEL, MCP_STORAGE_KEY, MCP_SETTINGS_KEY } from "@/lib/constants"
 import { McpEnabledSettings, McpServerConfig } from "@/lib/mcp"
+import { getDefaultToolNames } from "@/lib/tools"
 
 interface SettingsData {
   openaiApiKey: string
   openaiBaseUrl: string
   model: string
+  systemPrompt: string
+  enabledBuiltInTools: string[]
 }
 
 interface WorkspaceSettingsExport {
@@ -29,8 +32,26 @@ function isSettingsData(value: unknown): value is SettingsData {
   return (
     typeof value.openaiApiKey === "string" &&
     typeof value.openaiBaseUrl === "string" &&
-    typeof value.model === "string"
+    typeof value.model === "string" &&
+    (value.systemPrompt === undefined || typeof value.systemPrompt === "string") &&
+    (value.enabledBuiltInTools === undefined ||
+      (Array.isArray(value.enabledBuiltInTools) && value.enabledBuiltInTools.every((item) => typeof item === "string")))
   )
+}
+
+function normalizeSettingsData(value: SettingsData): SettingsData {
+  const defaultToolNames = getDefaultToolNames()
+  const enabledBuiltInTools = (value.enabledBuiltInTools || defaultToolNames).filter((name) =>
+    defaultToolNames.includes(name)
+  )
+
+  return {
+    openaiApiKey: value.openaiApiKey,
+    openaiBaseUrl: value.openaiBaseUrl,
+    model: value.model,
+    systemPrompt: value.systemPrompt || "",
+    enabledBuiltInTools,
+  }
 }
 
 function isMcpEnabledSettings(value: unknown): value is McpEnabledSettings {
@@ -77,6 +98,8 @@ export default function Home() {
     openaiApiKey: "",
     openaiBaseUrl: "",
     model: DEFAULT_MODEL,
+    systemPrompt: "",
+    enabledBuiltInTools: getDefaultToolNames(),
   })
   const [mcpConfigKey, setMcpConfigKey] = React.useState(0)
 
@@ -85,7 +108,10 @@ export default function Home() {
     const savedSettings = localStorage.getItem(STORAGE_KEY)
     if (savedSettings) {
       try {
-        setSettings(JSON.parse(savedSettings))
+        const parsed: unknown = JSON.parse(savedSettings)
+        if (isSettingsData(parsed)) {
+          setSettings(normalizeSettingsData(parsed))
+        }
       } catch (e) {
         console.error("Failed to load settings:", e)
       }
@@ -94,8 +120,9 @@ export default function Home() {
 
   // Save settings to localStorage
   const handleSettingsChange = (newSettings: SettingsData) => {
-    setSettings(newSettings)
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(newSettings))
+    const normalized = normalizeSettingsData(newSettings)
+    setSettings(normalized)
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(normalized))
   }
 
   // Trigger re-render of chat interface when MCP config changes
@@ -149,8 +176,9 @@ export default function Home() {
       const importedSettings =
         "settings" in parsed ? parsed.settings : parsed
       if (isSettingsData(importedSettings)) {
-        setSettings(importedSettings)
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(importedSettings))
+        const normalized = normalizeSettingsData(importedSettings)
+        setSettings(normalized)
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(normalized))
         importedCount += 1
       }
 
@@ -197,6 +225,8 @@ export default function Home() {
           apiKey={settings.openaiApiKey}
           baseUrl={settings.openaiBaseUrl}
           model={settings.model}
+          systemPrompt={settings.systemPrompt}
+          enabledBuiltInTools={settings.enabledBuiltInTools}
         />
       </main>
     </div>

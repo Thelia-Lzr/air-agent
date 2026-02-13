@@ -94,18 +94,16 @@ AI: The result of 42 multiplied by 17 is 714.
 **Multi-step Tool Call:**
 
 ```
-User: Calculate 15 + 23, and tell me the weather in Paris
+User: Calculate 15 + 23, and tell me what time it is in Tokyo
 AI: [Calls calculator tool]
-AI: [Calls weather tool]
-AI: 15 + 23 equals 38. The weather in Paris is currently Sunny 
-    with a temperature of 24°C, 38% humidity, and wind speed of 15 km/h.
+AI: [Calls get_current_time tool]
+AI: 15 + 23 equals 38. The current time in Tokyo is 2026-02-13 20:30.
 ```
 
 ### Built-in Tools
 
 1. **Calculator** - Performs arithmetic operations (add, subtract, multiply, divide)
 2. **Get Current Time** - Returns current date/time with timezone support
-3. **Get Weather** - Returns mock weather data (for demonstration)
 
 ### Quality Assurance
 

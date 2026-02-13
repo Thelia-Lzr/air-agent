@@ -13,6 +13,7 @@ import { ToolResult } from "@/components/tool-result"
 
 import { DEFAULT_MODEL, DEFAULT_BASE_URL, MCP_SETTINGS_KEY } from "@/lib/constants"
 import { AiSdkService } from "@/lib/ai-sdk"
+import { resolveSystemPromptTemplate } from "@/lib/prompt-template"
 import { ToolRegistry, getDefaultTools, ChatMessage, ToolCall } from "@/lib/tools"
 import { McpClient, mcpToolToAirAgentTool, getMcpServer } from "@/lib/mcp"
 
@@ -29,18 +30,28 @@ interface ChatInterfaceProps {
   apiKey: string
   baseUrl: string
   model: string
+  systemPrompt: string
+  enabledBuiltInTools: string[]
 }
 
-export function ChatInterface({ apiKey, baseUrl, model }: ChatInterfaceProps) {
+export function ChatInterface({
+  apiKey,
+  baseUrl,
+  model,
+  systemPrompt,
+  enabledBuiltInTools,
+}: ChatInterfaceProps) {
   const [messages, setMessages] = React.useState<Message[]>([])
   const [input, setInput] = React.useState("")
   const [isLoading, setIsLoading] = React.useState(false)
   const [error, setError] = React.useState<Error | null>(null)
-  const [toolRegistry] = React.useState(() => {
+  const toolRegistry = React.useMemo(() => {
     const registry = new ToolRegistry()
-    getDefaultTools().forEach((tool) => registry.registerTool(tool))
+    getDefaultTools()
+      .filter((tool) => enabledBuiltInTools.includes(tool.definition.function.name))
+      .forEach((tool) => registry.registerTool(tool))
     return registry
-  })
+  }, [enabledBuiltInTools])
   const [activeToolCalls, setActiveToolCalls] = React.useState<string[]>([])
   const messagesEndRef = React.useRef<HTMLDivElement>(null)
   
@@ -169,11 +180,12 @@ export function ChatInterface({ apiKey, baseUrl, model }: ChatInterfaceProps) {
 
     try {
       const url = baseUrl || DEFAULT_BASE_URL
+      const resolvedSystemPrompt = await resolveSystemPromptTemplate(systemPrompt)
 
       // Convert UI messages to ChatMessage format
-      const chatMessages: ChatMessage[] = [
+      const historyMessages: ChatMessage[] = [
         ...messages.map((m) => ({
-          role: m.role as "user" | "assistant" | "tool",
+          role: m.role,
           content: m.content,
           tool_calls: m.tool_calls,
           tool_call_id: m.tool_call_id,
@@ -184,6 +196,10 @@ export function ChatInterface({ apiKey, baseUrl, model }: ChatInterfaceProps) {
           content: userMessage.content,
         },
       ]
+
+      const chatMessages: ChatMessage[] = resolvedSystemPrompt
+        ? [{ role: "system", content: resolvedSystemPrompt }, ...historyMessages]
+        : historyMessages
 
       // Create AI SDK service with streaming callback
       const aiSdk = new AiSdkService({
@@ -226,7 +242,7 @@ export function ChatInterface({ apiKey, baseUrl, model }: ChatInterfaceProps) {
 
       // Update messages with final results
       const finalMessages: Message[] = resultMessages
-        .slice(messages.length + 1) // Skip already displayed messages
+        .slice(chatMessages.length) // Skip already displayed messages
         .map((msg) => ({
           id: crypto.randomUUID(),
           role: msg.role,

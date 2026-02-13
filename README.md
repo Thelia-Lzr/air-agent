@@ -6,7 +6,7 @@ A static AI agent chat interface with direct client-side OpenAI API integration.
 
 - 🤖 **AI Chat Interface** - Interactive chat with OpenAI models
 - 🛠️ **Automatic Tool Calling** - AI can automatically use tools/functions with streaming responses
-- 📊 **Built-in Tools** - Calculator, time, weather (mock), and easy to add custom tools
+- 📊 **Built-in Tools** - Calculator, time, and easy to add custom tools
 - 🔄 **Streaming Responses** - Real-time streaming of AI responses
 - 🔌 **MCP Client Support** - Full Model Context Protocol integration for browser-based tool discovery
 - 🌐 **MCP Server Configuration** - Configure and manage MCP servers directly in the browser
@@ -186,7 +186,7 @@ This enables seamless session resumption without manual intervention.
 Air Agent now supports automatic tool calling with streaming responses. When the AI needs to use a tool:
 
 1. The AI decides which tool to call based on the conversation
-2. The tool executes automatically (e.g., calculator, time check, weather)
+2. The tool executes automatically (e.g., calculator, time check)
 3. Results are sent back to the AI
 4. The AI continues its response with the tool results
 5. All happens seamlessly in one conversation flow
@@ -195,7 +195,6 @@ Air Agent now supports automatic tool calling with streaming responses. When the
 
 - **Calculator**: Performs arithmetic operations (add, subtract, multiply, divide)
 - **Get Current Time**: Returns current date and time with timezone support
-- **Get Weather**: Returns mock weather data for demonstration
 
 ### Adding Custom Tools
 

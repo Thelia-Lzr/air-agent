@@ -153,17 +153,6 @@ Returns current date and time:
 // The LLM will call: get_current_time({ timezone: "America/New_York" })
 ```
 
-### Get Weather
-
-Mock weather data (for demonstration):
-
-```typescript
-// Example usage in chat:
-"What's the weather in Paris?"
-// The LLM will call: get_weather({ location: "Paris" })
-// Returns mock weather data
-```
-
 ## MCP (Model Context Protocol) Compatibility
 
 The tool architecture is designed to be MCP-compatible:
