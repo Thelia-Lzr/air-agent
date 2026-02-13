@@ -27,9 +27,10 @@ import {
 
 interface McpConfigDialogProps {
   onServerChange?: () => void
+  trigger?: React.ReactNode
 }
 
-export function McpConfigDialog({ onServerChange }: McpConfigDialogProps) {
+export function McpConfigDialog({ onServerChange, trigger }: McpConfigDialogProps) {
   const [open, setOpen] = React.useState(false)
   const [servers, setServers] = React.useState<McpServerConfig[]>([])
   const [editingServer, setEditingServer] = React.useState<McpServerConfig | null>(null)
@@ -107,9 +108,11 @@ export function McpConfigDialog({ onServerChange }: McpConfigDialogProps) {
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button variant="outline" size="icon" aria-label="Configure MCP servers">
-          <Server className="h-4 w-4" />
-        </Button>
+        {trigger ?? (
+          <Button variant="outline" size="icon" aria-label="Configure MCP servers">
+            <Server className="h-4 w-4" />
+          </Button>
+        )}
       </DialogTrigger>
       <DialogContent className="sm:max-w-[600px] max-h-[80vh]">
         <DialogHeader>

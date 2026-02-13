@@ -1,11 +1,8 @@
 "use client"
 
 import * as React from "react"
-import { Download, Upload } from "lucide-react"
 import { ChatInterface } from "@/components/chat-interface"
-import { SettingsDialog } from "@/components/settings-dialog"
-import { McpConfigDialog } from "@/components/mcp-config-dialog"
-import { Button } from "@/components/ui/button"
+import { SettingsDrawer } from "@/components/settings-drawer"
 import { STORAGE_KEY, DEFAULT_MODEL, MCP_STORAGE_KEY, MCP_SETTINGS_KEY } from "@/lib/constants"
 import { McpEnabledSettings, McpServerConfig } from "@/lib/mcp"
 
@@ -82,7 +79,6 @@ export default function Home() {
     model: DEFAULT_MODEL,
   })
   const [mcpConfigKey, setMcpConfigKey] = React.useState(0)
-  const importInputRef = React.useRef<HTMLInputElement>(null)
 
   // Load settings from localStorage on mount
   React.useEffect(() => {
@@ -133,10 +129,6 @@ export default function Home() {
       console.error("Failed to export workspace settings:", error)
       alert("Export failed. Please check browser console for details.")
     }
-  }
-
-  const handleImportClick = () => {
-    importInputRef.current?.click()
   }
 
   const handleImportSettings = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -192,39 +184,14 @@ export default function Home() {
 
   return (
     <div className="h-screen flex flex-col bg-background">
-      <header className="border-b flex-shrink-0">
-        <div className="container mx-auto px-4 py-4 flex justify-between items-center">
-          <div>
-            <h1 className="text-2xl font-bold">Air Agent</h1>
-            <p className="text-sm text-muted-foreground">
-              AI Chat Interface powered by OpenAI
-            </p>
-          </div>
-          <div className="flex gap-2">
-            <input
-              ref={importInputRef}
-              type="file"
-              accept="application/json"
-              className="hidden"
-              onChange={handleImportSettings}
-            />
-            <Button variant="outline" onClick={handleExportSettings}>
-              <Download className="h-4 w-4 mr-2" />
-              Export
-            </Button>
-            <Button variant="outline" onClick={handleImportClick}>
-              <Upload className="h-4 w-4 mr-2" />
-              Import
-            </Button>
-            <McpConfigDialog onServerChange={handleMcpConfigChange} />
-            <SettingsDialog
-              settings={settings}
-              onSettingsChange={handleSettingsChange}
-            />
-          </div>
-        </div>
-      </header>
-      <main className="flex-1 container mx-auto px-4 py-8 overflow-hidden">
+      <SettingsDrawer
+        settings={settings}
+        onSettingsChange={handleSettingsChange}
+        onExport={handleExportSettings}
+        onImport={handleImportSettings}
+        onMcpConfigChange={handleMcpConfigChange}
+      />
+      <main className="flex-1 container mx-auto px-4 py-4 overflow-hidden">
         <ChatInterface
           key={mcpConfigKey}
           apiKey={settings.openaiApiKey}
