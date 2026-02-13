@@ -129,6 +129,7 @@ Once you have configured MCP servers:
 ### Connection Status
 
 The chat interface shows the MCP connection status:
+
 - **MCP Connected**: Successfully connected to the server and tools are available
 - **MCP Connecting...**: Attempting to connect to the server
 - **MCP Error**: Connection failed (check the error message for details)
@@ -146,12 +147,14 @@ Since Air Agent is a browser-only application, your MCP server must:
 Air Agent follows the MCP protocol standard for session management:
 
 **How it works:**
+
 1. When connecting to an MCP server, the client receives a session ID from the server
 2. The session ID is automatically stored in browser localStorage
 3. On reconnection or page reload, the stored session ID is reused to resume the session
 4. The session ID is included in all MCP requests via the `mcp-session-id` header
 
 **Session Persistence:**
+
 - Sessions persist across page reloads automatically via localStorage
 - Each MCP server URL has its own session ID
 - Session IDs are managed transparently by the client
@@ -160,17 +163,20 @@ This enables seamless session resumption without manual intervention.
 
 ### Troubleshooting MCP Connections
 
-**Connection Failed / CORS Error**
+#### Connection Failed / CORS Error
+
 - Ensure your MCP server has CORS properly configured
 - Check that the server URL is correct and publicly accessible
 - Verify that the server supports the Streamable HTTP transport
 
-**Tools Not Appearing**
+#### Tools Not Appearing
+
 - Make sure the MCP server is enabled in the configuration
 - Check that MCP is enabled for the current chat
 - Verify the server is returning tools in its `tools/list` response
 
-**Authentication Errors**
+#### Authentication Errors
+
 - Check that the API key is correct
 - Ensure the server expects Bearer token authentication
 - Verify the token has the necessary permissions
@@ -220,6 +226,7 @@ Air Agent includes a built-in MCP server that exposes tools and capabilities via
 To enable the MCP server, you need to manually create the API route:
 
 **1. Create the API route:**
+
 ```bash
 mkdir -p app/api/mcp
 cat > app/api/mcp/route.ts << 'EOF'
@@ -232,11 +239,13 @@ EOF
 ```
 
 **2. Run in development:**
+
 ```bash
 npm run dev
 ```
 
 **3. Or deploy to Node.js platforms:**
+
 ```bash
 npm run build
 npm run start
@@ -245,18 +254,21 @@ npm run start
 ### MCP Server Endpoint
 
 When running locally:
-```
+
+```text
 http://localhost:3000/api/mcp
 ```
 
 When deployed to Node.js platforms:
-```
+
+```text
 https://your-domain.com/api/mcp
 ```
 
 ### Quick Start
 
 1. **Initialize a session:**
+
 ```bash
 curl -X POST http://localhost:3000/api/mcp \
   -H "Content-Type: application/json" \
@@ -264,9 +276,10 @@ curl -X POST http://localhost:3000/api/mcp \
   -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"my-client","version":"1.0.0"}}}'
 ```
 
-2. **Save the `Mcp-Session-Id` from the response headers**
+1. **Save the `Mcp-Session-Id` from the response headers**
 
-3. **List available tools:**
+2. **List available tools:**
+
 ```bash
 curl -X POST http://localhost:3000/api/mcp \
   -H "Content-Type: application/json" \
@@ -274,7 +287,8 @@ curl -X POST http://localhost:3000/api/mcp \
   -d '{"jsonrpc":"2.0","id":2,"method":"tools/list"}'
 ```
 
-4. **Call a tool:**
+1. **Call a tool:**
+
 ```bash
 curl -X POST http://localhost:3000/api/mcp \
   -H "Content-Type: application/json" \
@@ -285,6 +299,7 @@ curl -X POST http://localhost:3000/api/mcp \
 ### Documentation
 
 For complete documentation including:
+
 - Session management lifecycle
 - Error handling and troubleshooting
 - All available tools
