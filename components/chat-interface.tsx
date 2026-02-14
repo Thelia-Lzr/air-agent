@@ -12,11 +12,12 @@ import { McpToggle } from "@/components/mcp-toggle"
 import { MarkdownRenderer } from "@/components/markdown-renderer"
 import { ToolResult } from "@/components/tool-result"
 
-import { DEFAULT_MODEL, DEFAULT_BASE_URL, MCP_SETTINGS_KEY } from "@/lib/constants"
+import { DEFAULT_MODEL, DEFAULT_BASE_URL } from "@/lib/constants"
 import { AiSdkService } from "@/lib/ai-sdk"
 import { buildSystemPrompt } from "@/lib/prompt-template"
-import { ToolRegistry, getDefaultTools, ChatMessage, ToolCall } from "@/lib/tools"
-import { McpClient, mcpToolToAirAgentTool, getMcpServer } from "@/lib/mcp"
+import { ToolRegistry, ChatMessage, ToolCall } from "@/lib/tools"
+import { useSession } from "@/lib/session/context"
+import { toSessionMessage, fromSessionMessage } from "@/lib/session/types"
 
 function detectUserLanguage(text: string): "Chinese" | "English" {
   const hasCjk = /[\u3400-\u9FFF\uF900-\uFAFF]/.test(text)
@@ -126,13 +127,34 @@ function TransitiveThoughtResult({ content }: { content: string }) {
   )
 }
 
+/**
+ * Generate a session title from the first message content.
+ * Truncates to 30 characters with "..." if longer.
+ */
+function generateTitleFromMessage(content: string): string {
+  const trimmed = content.trim()
+  if (trimmed.length <= 30) return trimmed
+  return trimmed.slice(0, 30) + "..."
+}
+
 interface ChatInterfaceProps {
   apiKey: string
   baseUrl: string
   model: string
   systemPrompt: string
   transitiveThinking: boolean
-  enabledBuiltInTools: string[]
+  toolRegistry: ToolRegistry
+  // MCP state (managed by parent)
+  mcpEnabled: boolean
+  mcpServerId: string | undefined
+  mcpStatus: string
+  mcpError: string | undefined
+  mcpReady: boolean
+  onMcpToggle: (enabled: boolean, serverId?: string) => void
+  /** Optional initial message to auto-send when the component mounts (e.g. from SessionCreator) */
+  initialMessage?: string
+  /** Callback to clear the initial message after it has been consumed */
+  onInitialMessageConsumed?: () => void
 }
 
 export function ChatInterface({
@@ -141,142 +163,86 @@ export function ChatInterface({
   model,
   systemPrompt,
   transitiveThinking,
-  enabledBuiltInTools,
+  toolRegistry,
+  mcpEnabled,
+  mcpServerId,
+  mcpStatus,
+  mcpError,
+  mcpReady,
+  onMcpToggle,
+  initialMessage,
+  onInitialMessageConsumed,
 }: ChatInterfaceProps) {
-  const [messages, setMessages] = React.useState<Message[]>([])
+  const { activeSession, activeSessionId, addMessage, updateSessionTitle } = useSession()
+
+  // Derive persisted messages from the active session
+  const persistedMessages: Message[] = React.useMemo(() => {
+    if (!activeSession) return []
+    return activeSession.messages.map(fromSessionMessage)
+  }, [activeSession])
+
+  // Local streaming messages (not yet persisted)
+  const [streamingMessages, setStreamingMessages] = React.useState<Message[]>([])
+
+  // Combined messages for display: persisted + streaming
+  const messages = React.useMemo(
+    () => [...persistedMessages, ...streamingMessages],
+    [persistedMessages, streamingMessages]
+  )
+
   const [input, setInput] = React.useState("")
   const [isLoading, setIsLoading] = React.useState(false)
   const [error, setError] = React.useState<Error | null>(null)
-  const toolRegistry = React.useMemo(() => {
-    const registry = new ToolRegistry()
-    getDefaultTools()
-      .filter((tool) => enabledBuiltInTools.includes(tool.definition.function.name))
-      .forEach((tool) => registry.registerTool(tool))
-    return registry
-  }, [enabledBuiltInTools])
   const [activeToolCalls, setActiveToolCalls] = React.useState<string[]>([])
   const messagesEndRef = React.useRef<HTMLDivElement>(null)
-  
-  // MCP state
-  const [mcpEnabled, setMcpEnabled] = React.useState(false)
-  const [mcpServerId, setMcpServerId] = React.useState<string | undefined>()
-  const [, setMcpClient] = React.useState<McpClient | null>(null)
-  const mcpClientRef = React.useRef<McpClient | null>(null)
-  const [mcpStatus, setMcpStatus] = React.useState<string>("disconnected")
-  const [mcpError, setMcpError] = React.useState<string | undefined>()
 
-  // Load MCP settings from localStorage
-  React.useEffect(() => {
-    const saved = localStorage.getItem(MCP_SETTINGS_KEY)
-    if (saved) {
-      try {
-        const settings = JSON.parse(saved)
-        setMcpEnabled(settings.mcpEnabled || false)
-        setMcpServerId(settings.mcpServerId)
-      } catch (e) {
-        console.error("Failed to load MCP settings:", e)
-      }
-    }
-  }, [])
-
-  // Handle MCP connection
-  React.useEffect(() => {
-    const connectMcp = async () => {
-      // Disconnect existing client
-      if (mcpClientRef.current) {
-        await mcpClientRef.current.disconnect()
-        mcpClientRef.current = null
-        setMcpClient(null)
-      }
-
-      // Clear MCP tools from registry
-      // (In a real implementation, we'd track which tools came from MCP)
-      
-      if (!mcpEnabled || !mcpServerId) {
-        setMcpStatus("disconnected")
-        return
-      }
-
-      const serverConfig = getMcpServer(mcpServerId)
-      if (!serverConfig) {
-        setMcpError("Server configuration not found")
-        setMcpStatus("error")
-        return
-      }
-
-      try {
-        const client = new McpClient(serverConfig, (status, err) => {
-          setMcpStatus(status)
-          setMcpError(err)
-        })
-
-        await client.connect()
-        
-        // Load tools from MCP server
-        const mcpTools = await client.listTools()
-        
-        // Add MCP tools to registry
-        mcpTools.forEach((mcpTool) => {
-          const tool = mcpToolToAirAgentTool(mcpTool, client)
-          toolRegistry.registerTool(tool)
-        })
-
-        mcpClientRef.current = client
-        setMcpClient(client)
-        setMcpError(undefined)
-      } catch (err) {
-        console.error("Failed to connect to MCP server:", err)
-        setMcpError(err instanceof Error ? err.message : "Connection failed")
-        setMcpStatus("error")
-        setMcpClient(null)
-        mcpClientRef.current = null
-      }
-    }
-
-    connectMcp()
-
-    // Cleanup
-    return () => {
-      if (mcpClientRef.current) {
-        mcpClientRef.current.disconnect().catch((err) => {
-          console.error("Error during MCP cleanup:", err)
-        })
-        mcpClientRef.current = null
-      }
-    }
-  }, [mcpEnabled, mcpServerId, toolRegistry])
-
-  // Save MCP settings when they change
-  const handleMcpToggle = (enabled: boolean, serverId?: string) => {
-    setMcpEnabled(enabled)
-    setMcpServerId(serverId)
-    
-    const settings = { mcpEnabled: enabled, mcpServerId: serverId }
-    localStorage.setItem(MCP_SETTINGS_KEY, JSON.stringify(settings))
-  }
+  // Track whether initial message has been consumed
+  const initialMessageConsumedRef = React.useRef(false)
 
   // Auto-scroll to bottom when messages change
   React.useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
   }, [messages])
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!input.trim() || !apiKey) return
+  // Clear streaming messages when active session changes (user switched sessions)
+  React.useEffect(() => {
+    setStreamingMessages([])
+    setError(null)
+  }, [activeSessionId])
+
+  /**
+   * Core message sending logic. Handles:
+   * 1. Persisting user message to session
+   * 2. Auto-generating title on first message
+   * 3. Transitive thinking phase
+   * 4. AI SDK streaming call
+   * 5. Persisting final assistant/tool messages after completion
+   */
+  const sendMessage = React.useCallback(async (messageContent: string) => {
+    if (!messageContent.trim() || !apiKey || !activeSessionId) return
 
     const userMessage: Message = {
       id: crypto.randomUUID(),
       role: "user",
-      content: input.trim(),
+      content: messageContent.trim(),
     }
 
-    setMessages((prev) => [...prev, userMessage])
-    setInput("")
+    // Persist user message to session (Req 7.5: don't persist system messages)
+    const userSessionMsg = toSessionMessage(userMessage)
+    await addMessage(userSessionMsg)
+
+    // Auto-generate title if this is the first message in the session
+    const isFirstMessage = persistedMessages.length === 0
+    if (isFirstMessage) {
+      const title = generateTitleFromMessage(messageContent.trim())
+      await updateSessionTitle(activeSessionId, title)
+    }
+
     setIsLoading(true)
     setError(null)
     setActiveToolCalls([])
 
-    // Create a streaming assistant message
+    // Create a streaming assistant message (local only, not persisted)
     const streamingMessageId = crypto.randomUUID()
     let streamingContent = ""
 
@@ -287,12 +253,16 @@ export function ChatInterface({
         template: systemPrompt,
         transitiveThinking,
       })
-      const priorMessages: ChatMessage[] = messages.map((m) => ({
-          role: m.role,
-          content: m.content,
-          tool_calls: m.tool_calls,
-          tool_call_id: m.tool_call_id,
-          name: m.name,
+
+      // Build prior messages from persisted session messages (which now includes the user message we just added)
+      // We need to use the messages BEFORE the current user message for the AI context,
+      // plus the current user message
+      const priorMessages: ChatMessage[] = persistedMessages.map((m) => ({
+        role: m.role,
+        content: m.content,
+        tool_calls: m.tool_calls,
+        tool_call_id: m.tool_call_id,
+        name: m.name,
       }))
 
       let phaseThought: string | null = null
@@ -312,15 +282,14 @@ export function ChatInterface({
           outputLanguage,
         })
 
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: crypto.randomUUID(),
-            role: "assistant",
-            content: phaseThought!,
-            type: "transitive-thought",
-          },
-        ])
+        // Show transitive thought in streaming (local) state
+        const thoughtMessage: Message = {
+          id: crypto.randomUUID(),
+          role: "assistant",
+          content: phaseThought,
+          type: "transitive-thought",
+        }
+        setStreamingMessages([thoughtMessage])
       }
 
       const executionMessages: ChatMessage[] = [
@@ -348,7 +317,6 @@ export function ChatInterface({
         ? [{ role: "system", content: resolvedSystemPrompt }, ...executionMessages]
         : executionMessages
 
-      // Create AI SDK service with streaming callback
       const aiSdk = new AiSdkService({
         apiKey,
         baseUrl: url,
@@ -357,7 +325,7 @@ export function ChatInterface({
         onStreamChunk: (chunk) => {
           if (chunk.type === "content" && chunk.content) {
             streamingContent += chunk.content
-            setMessages((prev) => {
+            setStreamingMessages((prev) => {
               const newMessages = [...prev]
               const streamingIndex = newMessages.findIndex(
                 (m) => m.id === streamingMessageId
@@ -384,12 +352,11 @@ export function ChatInterface({
         },
       })
 
-      // Send message and handle automatic tool execution
       const resultMessages = await aiSdk.sendMessage(chatMessages)
 
-      // Update messages with final results
+      // Extract new messages from the AI response (skip the input messages)
       const finalMessages: Message[] = resultMessages
-        .slice(chatMessages.length) // Skip already displayed messages
+        .slice(chatMessages.length)
         .map((msg) => ({
           id: crypto.randomUUID(),
           role: msg.role,
@@ -399,24 +366,72 @@ export function ChatInterface({
           name: msg.name,
         }))
 
-      setMessages((prev) => {
-        // Remove streaming message if it exists
-        const filtered = prev.filter((m) => m.id !== streamingMessageId)
-        return [...filtered, ...finalMessages]
-      })
+      // Persist transitive thought first if generated (Req 7.2), to maintain correct order
+      if (phaseThought) {
+        const thoughtSessionMsg = toSessionMessage({
+          id: crypto.randomUUID(),
+          role: "assistant",
+          content: phaseThought,
+          type: "transitive-thought",
+        })
+        await addMessage(thoughtSessionMsg)
+      }
 
+      // Persist all final messages to session (Req 7.4: only after streaming completes)
+      // Req 7.5: don't persist system messages
+      for (const msg of finalMessages) {
+        if (msg.role !== "system") {
+          await addMessage(toSessionMessage(msg))
+        }
+      }
+
+      // Clear streaming state — persisted messages will now include everything
+      setStreamingMessages([])
       setActiveToolCalls([])
     } catch (err) {
       setError(err instanceof Error ? err : new Error("An error occurred"))
-      // Remove streaming message on error
-      setMessages((prev) => prev.filter((m) => m.id !== streamingMessageId))
+      // Clear streaming messages on error
+      setStreamingMessages([])
     } finally {
       setIsLoading(false)
     }
+  }, [apiKey, baseUrl, model, systemPrompt, transitiveThinking, toolRegistry, activeSessionId, persistedMessages, addMessage, updateSessionTitle])
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!input.trim() || !apiKey) return
+
+    const messageContent = input.trim()
+    setInput("")
+    await sendMessage(messageContent)
   }
 
+  // Stable ref to sendMessage so the initial-message effect doesn't re-fire
+  // when sendMessage's identity changes (it depends on persistedMessages).
+  const sendMessageRef = React.useRef(sendMessage)
+  React.useEffect(() => {
+    sendMessageRef.current = sendMessage
+  }, [sendMessage])
+
+  // Handle initial message from SessionCreator (auto-send on mount)
+  // Wait for mcpReady so that MCP tools are registered before the first message is sent
+  React.useEffect(() => {
+    if (
+      initialMessage &&
+      !initialMessageConsumedRef.current &&
+      apiKey &&
+      activeSessionId &&
+      !isLoading &&
+      mcpReady
+    ) {
+      initialMessageConsumedRef.current = true
+      onInitialMessageConsumed?.()
+      sendMessageRef.current(initialMessage)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialMessage, apiKey, activeSessionId, mcpReady])
+
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    // Submit on Enter, allow Shift+Enter for new line (though Input doesn't support multiline)
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault()
       const form = e.currentTarget.form
@@ -435,7 +450,7 @@ export function ChatInterface({
             <McpToggle
               enabled={mcpEnabled}
               serverId={mcpServerId}
-              onToggle={handleMcpToggle}
+              onToggle={onMcpToggle}
             />
             {mcpEnabled && mcpStatus === "connected" && (
               <Badge variant="default" className="text-xs">
