@@ -12,11 +12,10 @@ import { McpToggle } from "@/components/mcp-toggle"
 import { MarkdownRenderer } from "@/components/markdown-renderer"
 import { ToolResult } from "@/components/tool-result"
 
-import { DEFAULT_MODEL, DEFAULT_BASE_URL, MCP_SETTINGS_KEY } from "@/lib/constants"
+import { DEFAULT_MODEL, DEFAULT_BASE_URL } from "@/lib/constants"
 import { AiSdkService } from "@/lib/ai-sdk"
 import { buildSystemPrompt } from "@/lib/prompt-template"
-import { ToolRegistry, getDefaultTools, ChatMessage, ToolCall } from "@/lib/tools"
-import { McpClient, mcpToolToAirAgentTool, getMcpServer } from "@/lib/mcp"
+import { ToolRegistry, ChatMessage, ToolCall } from "@/lib/tools"
 import { useSession } from "@/lib/session/context"
 import { toSessionMessage, fromSessionMessage } from "@/lib/session/types"
 
@@ -144,7 +143,14 @@ interface ChatInterfaceProps {
   model: string
   systemPrompt: string
   transitiveThinking: boolean
-  enabledBuiltInTools: string[]
+  toolRegistry: ToolRegistry
+  // MCP state (managed by parent)
+  mcpEnabled: boolean
+  mcpServerId: string | undefined
+  mcpStatus: string
+  mcpError: string | undefined
+  mcpReady: boolean
+  onMcpToggle: (enabled: boolean, serverId?: string) => void
   /** Optional initial message to auto-send when the component mounts (e.g. from SessionCreator) */
   initialMessage?: string
   /** Callback to clear the initial message after it has been consumed */
@@ -157,7 +163,13 @@ export function ChatInterface({
   model,
   systemPrompt,
   transitiveThinking,
-  enabledBuiltInTools,
+  toolRegistry,
+  mcpEnabled,
+  mcpServerId,
+  mcpStatus,
+  mcpError,
+  mcpReady,
+  onMcpToggle,
   initialMessage,
   onInitialMessageConsumed,
 }: ChatInterfaceProps) {
@@ -181,128 +193,11 @@ export function ChatInterface({
   const [input, setInput] = React.useState("")
   const [isLoading, setIsLoading] = React.useState(false)
   const [error, setError] = React.useState<Error | null>(null)
-  const toolRegistry = React.useMemo(() => {
-    const registry = new ToolRegistry()
-    getDefaultTools()
-      .filter((tool) => enabledBuiltInTools.includes(tool.definition.function.name))
-      .forEach((tool) => registry.registerTool(tool))
-    return registry
-  }, [enabledBuiltInTools])
   const [activeToolCalls, setActiveToolCalls] = React.useState<string[]>([])
   const messagesEndRef = React.useRef<HTMLDivElement>(null)
-  
-  // MCP state
-  const [mcpEnabled, setMcpEnabled] = React.useState(false)
-  const [mcpServerId, setMcpServerId] = React.useState<string | undefined>()
-  const [, setMcpClient] = React.useState<McpClient | null>(null)
-  const mcpClientRef = React.useRef<McpClient | null>(null)
-  const [mcpStatus, setMcpStatus] = React.useState<string>("disconnected")
-  const [mcpError, setMcpError] = React.useState<string | undefined>()
 
   // Track whether initial message has been consumed
   const initialMessageConsumedRef = React.useRef(false)
-
-  // Track whether MCP initialization is complete (connected or not applicable)
-  const [mcpReady, setMcpReady] = React.useState(false)
-
-  // Load MCP settings from localStorage
-  React.useEffect(() => {
-    const saved = localStorage.getItem(MCP_SETTINGS_KEY)
-    if (saved) {
-      try {
-        const settings = JSON.parse(saved)
-        setMcpEnabled(settings.mcpEnabled || false)
-        setMcpServerId(settings.mcpServerId)
-      } catch (e) {
-        console.error("Failed to load MCP settings:", e)
-      }
-    }
-  }, [])
-
-  // Handle MCP connection
-  React.useEffect(() => {
-    let cancelled = false
-
-    const connectMcp = async () => {
-      setMcpReady(false)
-
-      // Disconnect existing client
-      if (mcpClientRef.current) {
-        await mcpClientRef.current.disconnect()
-        mcpClientRef.current = null
-        setMcpClient(null)
-      }
-
-      if (!mcpEnabled || !mcpServerId) {
-        setMcpStatus("disconnected")
-        if (!cancelled) setMcpReady(true)
-        return
-      }
-
-      const serverConfig = getMcpServer(mcpServerId)
-      if (!serverConfig) {
-        setMcpError("Server configuration not found")
-        setMcpStatus("error")
-        if (!cancelled) setMcpReady(true)
-        return
-      }
-
-      try {
-        const client = new McpClient(serverConfig, (status, err) => {
-          setMcpStatus(status)
-          setMcpError(err)
-        })
-
-        await client.connect()
-        
-        const mcpTools = await client.listTools()
-        
-        if (cancelled) {
-          await client.disconnect()
-          return
-        }
-
-        mcpTools.forEach((mcpTool) => {
-          const tool = mcpToolToAirAgentTool(mcpTool, client)
-          toolRegistry.registerTool(tool)
-        })
-
-        mcpClientRef.current = client
-        setMcpClient(client)
-        setMcpError(undefined)
-      } catch (err) {
-        console.error("Failed to connect to MCP server:", err)
-        if (!cancelled) {
-          setMcpError(err instanceof Error ? err.message : "Connection failed")
-          setMcpStatus("error")
-          setMcpClient(null)
-          mcpClientRef.current = null
-        }
-      } finally {
-        if (!cancelled) setMcpReady(true)
-      }
-    }
-
-    connectMcp()
-
-    return () => {
-      cancelled = true
-      if (mcpClientRef.current) {
-        mcpClientRef.current.disconnect().catch((err) => {
-          console.error("Error during MCP cleanup:", err)
-        })
-        mcpClientRef.current = null
-      }
-    }
-  }, [mcpEnabled, mcpServerId, toolRegistry])
-
-  const handleMcpToggle = (enabled: boolean, serverId?: string) => {
-    setMcpEnabled(enabled)
-    setMcpServerId(serverId)
-    
-    const settings = { mcpEnabled: enabled, mcpServerId: serverId }
-    localStorage.setItem(MCP_SETTINGS_KEY, JSON.stringify(settings))
-  }
 
   // Auto-scroll to bottom when messages change
   React.useEffect(() => {
@@ -555,7 +450,7 @@ export function ChatInterface({
             <McpToggle
               enabled={mcpEnabled}
               serverId={mcpServerId}
-              onToggle={handleMcpToggle}
+              onToggle={onMcpToggle}
             />
             {mcpEnabled && mcpStatus === "connected" && (
               <Badge variant="default" className="text-xs">

@@ -1,15 +1,22 @@
 "use client"
 
 import { useState, type KeyboardEvent } from "react"
-import { Lightbulb, Code, BarChart3, Calendar, Send, AlertCircle } from "lucide-react"
+import { Lightbulb, Code, BarChart3, Calendar, Send, AlertCircle, Network } from "lucide-react"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
+import { Badge } from "@/components/ui/badge"
 import { Textarea } from "@/components/ui/textarea"
+import { McpToggle } from "@/components/mcp-toggle"
 import { cn } from "@/lib/utils"
 
 interface SessionCreatorProps {
   onStartSession: (message: string) => void
   apiKeyConfigured: boolean
+  mcpEnabled?: boolean
+  mcpStatus?: string
+  mcpError?: string
+  mcpServerId?: string
+  onMcpToggle?: (enabled: boolean, serverId?: string) => void
 }
 
 const RECOMMENDED_QUESTIONS = [
@@ -39,7 +46,15 @@ const RECOMMENDED_QUESTIONS = [
   },
 ] as const
 
-export function SessionCreator({ onStartSession, apiKeyConfigured }: SessionCreatorProps) {
+export function SessionCreator({
+  onStartSession,
+  apiKeyConfigured,
+  mcpEnabled,
+  mcpStatus,
+  mcpError,
+  mcpServerId,
+  onMcpToggle,
+}: SessionCreatorProps) {
   const [input, setInput] = useState("")
 
   const disabled = !apiKeyConfigured
@@ -72,6 +87,34 @@ export function SessionCreator({ onStartSession, apiKeyConfigured }: SessionCrea
         <div className="flex items-center gap-2 mb-6 px-4 py-3 rounded-lg bg-destructive/10 text-destructive text-sm">
           <AlertCircle className="h-4 w-4 shrink-0" />
           <span>请先在设置中配置 API Key</span>
+        </div>
+      )}
+
+      {onMcpToggle && (
+        <div className="flex flex-col items-center gap-2 mb-6">
+          <McpToggle
+            enabled={mcpEnabled ?? false}
+            serverId={mcpServerId}
+            onToggle={onMcpToggle}
+          />
+          {mcpEnabled && mcpStatus === "connected" && (
+            <Badge variant="default" className="text-xs">
+              <Network className="h-3 w-3 mr-1" />
+              MCP 已连接
+            </Badge>
+          )}
+          {mcpEnabled && mcpStatus === "connecting" && (
+            <Badge variant="outline" className="text-xs">
+              <Network className="h-3 w-3 mr-1" />
+              MCP 连接中...
+            </Badge>
+          )}
+          {mcpEnabled && mcpStatus === "error" && (
+            <Badge variant="destructive" className="text-xs">
+              <AlertCircle className="h-3 w-3 mr-1" />
+              MCP 错误: {mcpError}
+            </Badge>
+          )}
         </div>
       )}
 

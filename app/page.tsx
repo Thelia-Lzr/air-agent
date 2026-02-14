@@ -7,8 +7,8 @@ import { SessionSidebar } from "@/components/session-sidebar"
 import { SessionCreator } from "@/components/session-creator"
 import { SessionProvider, useSession } from "@/lib/session/context"
 import { STORAGE_KEY, DEFAULT_MODEL, MCP_STORAGE_KEY, MCP_SETTINGS_KEY, SIDEBAR_STATE_KEY } from "@/lib/constants"
-import { McpEnabledSettings, McpServerConfig } from "@/lib/mcp"
-import { getDefaultToolNames } from "@/lib/tools"
+import { McpEnabledSettings, McpServerConfig, useMcpConnection } from "@/lib/mcp"
+import { ToolRegistry, getDefaultTools, getDefaultToolNames } from "@/lib/tools"
 import { Loader2 } from "lucide-react"
 
 interface SettingsData {
@@ -116,6 +116,19 @@ function HomeContent() {
     enabledBuiltInTools: getDefaultToolNames(),
   })
   const [mcpConfigKey, setMcpConfigKey] = React.useState(0)
+
+  // Tool registry — created once at the app level so MCP tools persist across session switches
+  const toolRegistry = React.useMemo(() => {
+    const registry = new ToolRegistry()
+    getDefaultTools()
+      .filter((tool) => settings.enabledBuiltInTools.includes(tool.definition.function.name))
+      .forEach((tool) => registry.registerTool(tool))
+    return registry
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [settings.enabledBuiltInTools, mcpConfigKey])
+
+  // MCP connection — lifted to app level so it connects before ChatInterface mounts
+  const mcp = useMcpConnection(toolRegistry)
 
   // Sidebar collapsed state
   const [sidebarCollapsed, setSidebarCollapsed] = React.useState(true)
@@ -333,7 +346,13 @@ function HomeContent() {
               model={settings.model}
               systemPrompt={settings.systemPrompt}
               transitiveThinking={settings.transitiveThinking}
-              enabledBuiltInTools={settings.enabledBuiltInTools}
+              toolRegistry={toolRegistry}
+              mcpEnabled={mcp.mcpEnabled}
+              mcpServerId={mcp.mcpServerId}
+              mcpStatus={mcp.mcpStatus}
+              mcpError={mcp.mcpError}
+              mcpReady={mcp.mcpReady}
+              onMcpToggle={mcp.handleMcpToggle}
               initialMessage={initialMessage}
               onInitialMessageConsumed={handleInitialMessageConsumed}
             />
@@ -341,6 +360,11 @@ function HomeContent() {
             <SessionCreator
               onStartSession={handleStartSession}
               apiKeyConfigured={!!settings.openaiApiKey}
+              mcpEnabled={mcp.mcpEnabled}
+              mcpStatus={mcp.mcpStatus}
+              mcpError={mcp.mcpError}
+              mcpServerId={mcp.mcpServerId}
+              onMcpToggle={mcp.handleMcpToggle}
             />
           )}
         </main>
