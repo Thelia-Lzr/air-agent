@@ -12,6 +12,7 @@ interface SettingsData {
   openaiBaseUrl: string
   model: string
   systemPrompt: string
+  transitiveThinking: boolean
   enabledBuiltInTools: string[]
 }
 
@@ -34,6 +35,7 @@ function isSettingsData(value: unknown): value is SettingsData {
     typeof value.openaiBaseUrl === "string" &&
     typeof value.model === "string" &&
     (value.systemPrompt === undefined || typeof value.systemPrompt === "string") &&
+    (value.transitiveThinking === undefined || typeof value.transitiveThinking === "boolean") &&
     (value.enabledBuiltInTools === undefined ||
       (Array.isArray(value.enabledBuiltInTools) && value.enabledBuiltInTools.every((item) => typeof item === "string")))
   )
@@ -50,6 +52,7 @@ function normalizeSettingsData(value: SettingsData): SettingsData {
     openaiBaseUrl: value.openaiBaseUrl,
     model: value.model,
     systemPrompt: value.systemPrompt || "",
+    transitiveThinking: value.transitiveThinking ?? false,
     enabledBuiltInTools,
   }
 }
@@ -99,6 +102,7 @@ export default function Home() {
     openaiBaseUrl: "",
     model: DEFAULT_MODEL,
     systemPrompt: "",
+    transitiveThinking: false,
     enabledBuiltInTools: getDefaultToolNames(),
   })
   const [mcpConfigKey, setMcpConfigKey] = React.useState(0)
@@ -226,6 +230,7 @@ export default function Home() {
           baseUrl={settings.openaiBaseUrl}
           model={settings.model}
           systemPrompt={settings.systemPrompt}
+          transitiveThinking={settings.transitiveThinking}
           enabledBuiltInTools={settings.enabledBuiltInTools}
         />
       </main>

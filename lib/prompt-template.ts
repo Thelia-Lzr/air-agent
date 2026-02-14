@@ -12,16 +12,43 @@ export async function resolveSystemPromptTemplate(template: string): Promise<str
 
   const replacements: Record<string, string> = {
     current_time: currentTime,
-    "当前时间": currentTime,
     current_time_iso: currentTimeIso,
     current_timezone: timezone,
     current_location: currentLocation,
-    "当前地理位置": currentLocation,
   }
 
   return template.replace(/\{\{\s*([^{}\s]+)\s*\}\}/g, (match, key: string) => {
     return replacements[key] ?? match
   })
+}
+
+const TRANSITIVE_THINKING_PROMPT = [
+  "Transitive Thinking Mode is enabled.",
+  "You must expose the reasoning chain to the user in a concise, structured way.",
+  "Always respond in the same language as the latest user message, unless the user explicitly asks for another language.",
+  "",
+  "Output format (mandatory):",
+  "### Reasoning Chain",
+  "1. Start from the user's explicit facts and requirements.",
+  "2. Add intermediate inference links (at least 3 steps for non-trivial tasks).",
+  "3. Validate each link; mark uncertainty with \"uncertain\" and what is missing.",
+  "4. If tools/data are needed, say what is needed before concluding.",
+  "",
+  "### Final Answer",
+  "- Provide the final answer after the reasoning section.",
+  "- Keep it concise and actionable.",
+  "",
+  "Never skip the \"### Reasoning Chain\" section.",
+].join("\n")
+
+export async function buildSystemPrompt(options: {
+  template: string
+  transitiveThinking: boolean
+}): Promise<string> {
+  const resolvedTemplate = await resolveSystemPromptTemplate(options.template)
+  const transitivePrompt = options.transitiveThinking ? TRANSITIVE_THINKING_PROMPT : ""
+
+  return [resolvedTemplate, transitivePrompt].filter(Boolean).join("\n\n")
 }
 
 async function getCurrentLocationText(): Promise<string> {

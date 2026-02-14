@@ -24,6 +24,7 @@ interface SettingsData {
   openaiBaseUrl: string
   model: string
   systemPrompt: string
+  transitiveThinking: boolean
   enabledBuiltInTools: string[]
 }
 
@@ -137,8 +138,25 @@ export function SettingsDrawer({
               rows={4}
             />
             <p className="text-xs text-muted-foreground">
-              {"Supported template variables: {{current_time}}, {{current_location}} (also supports {{当前时间}}, {{当前地理位置}})."}
+              {"Supported template variables: {{current_time}}, {{current_location}}, {{current_time_iso}}, {{current_timezone}}."}
             </p>
+          </div>
+
+          <div className="flex items-center justify-between rounded-md border p-3">
+            <div className="space-y-1">
+              <Label htmlFor="drawer-transitiveThinking">Transitive Thinking</Label>
+              <p className="text-xs text-muted-foreground">
+                Encourage multi-hop reasoning by chaining intermediate relations before final conclusions.
+              </p>
+            </div>
+            <Switch
+              id="drawer-transitiveThinking"
+              checked={localSettings.transitiveThinking}
+              onCheckedChange={(checked) =>
+                setLocalSettings({ ...localSettings, transitiveThinking: checked })
+              }
+              aria-label="Toggle Transitive Thinking"
+            />
           </div>
 
           <div className="grid gap-2">

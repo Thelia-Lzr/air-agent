@@ -1,29 +1,129 @@
 "use client"
 
 import * as React from "react"
-import { Send, Loader2, Wrench, AlertCircle } from "lucide-react"
+import { Send, Loader2, Wrench, AlertCircle, ChevronDown, ChevronRight } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
 import { McpToggle } from "@/components/mcp-toggle"
 import { MarkdownRenderer } from "@/components/markdown-renderer"
 import { ToolResult } from "@/components/tool-result"
 
 import { DEFAULT_MODEL, DEFAULT_BASE_URL, MCP_SETTINGS_KEY } from "@/lib/constants"
 import { AiSdkService } from "@/lib/ai-sdk"
-import { resolveSystemPromptTemplate } from "@/lib/prompt-template"
+import { buildSystemPrompt } from "@/lib/prompt-template"
 import { ToolRegistry, getDefaultTools, ChatMessage, ToolCall } from "@/lib/tools"
 import { McpClient, mcpToolToAirAgentTool, getMcpServer } from "@/lib/mcp"
+
+function detectUserLanguage(text: string): "Chinese" | "English" {
+  const hasCjk = /[\u3400-\u9FFF\uF900-\uFAFF]/.test(text)
+  return hasCjk ? "Chinese" : "English"
+}
+
+async function generateTransitiveThought(options: {
+  apiKey: string
+  baseUrl: string
+  model: string
+  systemPrompt: string
+  messages: ChatMessage[]
+  outputLanguage: "Chinese" | "English"
+}): Promise<string> {
+  const response = await fetch(`${options.baseUrl}/chat/completions`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${options.apiKey}`,
+    },
+    body: JSON.stringify({
+      model: options.model,
+      stream: false,
+      messages: [
+        {
+          role: "system",
+          content: [
+            options.systemPrompt,
+            "",
+            "You are now in Phase 1 (transitive reasoning draft).",
+            "Output only a short Markdown block with this exact structure:",
+            "### Reasoning Chain",
+            "1. ...",
+            "2. ...",
+            "3. ...",
+            "Requirements:",
+            "- Do not provide the final answer",
+            "- Do not call tools",
+            "- If information is missing, state what is missing clearly",
+            `- Write all content in ${options.outputLanguage}`,
+          ]
+            .filter(Boolean)
+            .join("\n"),
+        },
+        ...options.messages,
+      ],
+    }),
+  })
+
+  if (!response.ok) {
+    const errorText = await response.text()
+    throw new Error(`Thought phase failed: ${response.status} ${response.statusText} - ${errorText}`)
+  }
+
+  const payload: unknown = await response.json()
+  const content =
+    typeof payload === "object" &&
+    payload !== null &&
+    "choices" in payload &&
+    Array.isArray((payload as { choices?: unknown[] }).choices)
+      ? (payload as { choices: Array<{ message?: { content?: string } }> }).choices[0]?.message?.content
+      : ""
+
+  if (!content || !content.trim()) {
+    throw new Error("Thought phase returned empty content")
+  }
+
+  return content.trim()
+}
 
 interface Message {
   id: string
   role: "user" | "assistant" | "tool" | "system"
   content: string
+  type?: "transitive-thought"
   tool_calls?: ToolCall[]
   tool_call_id?: string
   name?: string
+}
+
+const MAX_REASONING_PREVIEW_LENGTH = 100
+
+function TransitiveThoughtResult({ content }: { content: string }) {
+  const [isOpen, setIsOpen] = React.useState(false)
+  const firstLine = content.split("\n")[0] || "Reasoning generated"
+  const preview =
+    firstLine.length > MAX_REASONING_PREVIEW_LENGTH
+      ? `${firstLine.slice(0, MAX_REASONING_PREVIEW_LENGTH)}...`
+      : firstLine
+
+  return (
+    <Collapsible open={isOpen} onOpenChange={setIsOpen} className="w-full text-xs text-muted-foreground">
+      <div className="flex items-center gap-2 mb-1">
+        <Badge variant="outline" className="text-[10px]">Reasoning</Badge>
+        <CollapsibleTrigger className="flex items-center gap-1 hover:text-foreground transition-colors">
+          {isOpen ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+          <span className="text-[10px]">{isOpen ? "Hide" : "Show"}</span>
+        </CollapsibleTrigger>
+      </div>
+
+      {!isOpen && <div className="text-[11px] text-muted-foreground/70 truncate">{preview}</div>}
+
+      <CollapsibleContent className="mt-2">
+        <MarkdownRenderer content={content} isUserMessage={false} />
+      </CollapsibleContent>
+    </Collapsible>
+  )
 }
 
 interface ChatInterfaceProps {
@@ -31,6 +131,7 @@ interface ChatInterfaceProps {
   baseUrl: string
   model: string
   systemPrompt: string
+  transitiveThinking: boolean
   enabledBuiltInTools: string[]
 }
 
@@ -39,6 +140,7 @@ export function ChatInterface({
   baseUrl,
   model,
   systemPrompt,
+  transitiveThinking,
   enabledBuiltInTools,
 }: ChatInterfaceProps) {
   const [messages, setMessages] = React.useState<Message[]>([])
@@ -180,26 +282,71 @@ export function ChatInterface({
 
     try {
       const url = baseUrl || DEFAULT_BASE_URL
-      const resolvedSystemPrompt = await resolveSystemPromptTemplate(systemPrompt)
-
-      // Convert UI messages to ChatMessage format
-      const historyMessages: ChatMessage[] = [
-        ...messages.map((m) => ({
+      const outputLanguage = detectUserLanguage(userMessage.content)
+      const resolvedSystemPrompt = await buildSystemPrompt({
+        template: systemPrompt,
+        transitiveThinking,
+      })
+      const priorMessages: ChatMessage[] = messages.map((m) => ({
           role: m.role,
           content: m.content,
           tool_calls: m.tool_calls,
           tool_call_id: m.tool_call_id,
           name: m.name,
-        })),
+      }))
+
+      let phaseThought: string | null = null
+      if (transitiveThinking) {
+        phaseThought = await generateTransitiveThought({
+          apiKey,
+          baseUrl: url,
+          model: model || DEFAULT_MODEL,
+          systemPrompt: resolvedSystemPrompt,
+          messages: [
+            ...priorMessages,
+            {
+              role: "user",
+              content: userMessage.content,
+            },
+          ],
+          outputLanguage,
+        })
+
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: crypto.randomUUID(),
+            role: "assistant",
+            content: phaseThought!,
+            type: "transitive-thought",
+          },
+        ])
+      }
+
+      const executionMessages: ChatMessage[] = [
+        ...priorMessages,
         {
-          role: "user" as const,
+          role: "user",
           content: userMessage.content,
         },
+        ...(phaseThought
+          ? [
+              {
+                role: "assistant" as const,
+                content: phaseThought,
+              },
+              {
+                role: "user" as const,
+                content:
+                  `Continue from the reasoning chain above. Use tools if needed. Then output only a \`### Final Answer\` section with concise, actionable content. The output language must be ${outputLanguage}.`,
+              },
+            ]
+          : []),
       ]
 
       const chatMessages: ChatMessage[] = resolvedSystemPrompt
-        ? [{ role: "system", content: resolvedSystemPrompt }, ...historyMessages]
-        : historyMessages
+        ? [{ role: "system", content: resolvedSystemPrompt }, ...executionMessages]
+        : executionMessages
 
       // Create AI SDK service with streaming callback
       const aiSdk = new AiSdkService({
@@ -329,6 +476,8 @@ export function ChatInterface({
                   className={`rounded-lg px-4 py-2 overflow-hidden break-words min-w-0 ${
                   message.role === "user"
                   ? "bg-primary text-primary-foreground  max-w-[90%]"
+                  : message.type === "transitive-thought"
+                  ? "bg-muted/50 border border-muted-foreground/20 max-w-[90%]"
                   : message.role === "tool"
                   ? "bg-muted/50 border border-muted-foreground/20 max-w-[90%]"
                   : "bg-muted max-w-[90%]"
@@ -336,6 +485,8 @@ export function ChatInterface({
                 >
                   {message.role === "tool" ? (
                   <ToolResult content={message.content} name={message.name} />
+                  ) : message.type === "transitive-thought" ? (
+                  <TransitiveThoughtResult content={message.content} />
                   ) : (
                   <>
                   <div>
